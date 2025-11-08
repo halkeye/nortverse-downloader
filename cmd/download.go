@@ -6,9 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
@@ -21,24 +24,35 @@ var downloadCmd = &cobra.Command{
 	Use:   "download",
 	Short: "A brief description of your command",
 	Run: func(cmd *cobra.Command, args []string) {
-		var err error
-		nextUrl := "https://nortverse.com/comic/overconfidence/"
-		count := 1
+		single, err := cmd.PersistentFlags().GetBool("single")
+		if err != nil {
+			panic(err)
+		}
+
+		overwrite, err := cmd.PersistentFlags().GetBool("overwrite")
+		if err != nil {
+			panic(err)
+		}
+
+		nextUrl, err := cmd.PersistentFlags().GetString("start-url")
+		if err != nil {
+			panic(err)
+		}
 		for nextUrl != "" {
 			url := nextUrl
-			nextUrl, err = downloadComic(cmd.Context(), count, url)
+			nextUrl, err = downloadComic(cmd.Context(), overwrite, url)
 			if err != nil {
 				panic(fmt.Errorf("unable to download url: %s - %w", url, err))
 			}
-			count++
+			if single {
+				break
+			}
 			time.Sleep(time.Second * 5)
 		}
 	},
 }
 
 func downloadUrl(ctx context.Context, url string) (io.ReadCloser, error) {
-	fmt.Println(url)
-
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create request: %w", err)
@@ -56,11 +70,11 @@ func downloadUrl(ctx context.Context, url string) (io.ReadCloser, error) {
 	return res.Body, nil
 }
 
-func downloadComic(ctx context.Context, count int, url string) (string, error) {
+func downloadComic(ctx context.Context, overwrite bool, comicURL string) (string, error) {
 	var nextUrl string
-	cbzFilename := fmt.Sprintf("download/nortverse - %04d.cbz", count)
+	var comicID uint64
 
-	body, err := downloadUrl(ctx, url)
+	body, err := downloadUrl(ctx, comicURL)
 	defer body.Close()
 	// Load the HTML document
 	doc, err := goquery.NewDocumentFromReader(body)
@@ -68,27 +82,45 @@ func downloadComic(ctx context.Context, count int, url string) (string, error) {
 		return "", fmt.Errorf("unable to read body: %w", err)
 	}
 
+	for _, s := range doc.Find("link[rel=shortlink]").EachIter() {
+		if val, ok := s.Attr("href"); ok {
+			u, err := url.Parse(val)
+			if err != nil {
+				return "", fmt.Errorf("unable to parse shortlink - %s: %w", val, err)
+			}
+			postID := u.Query().Get("p")
+			comicID, err = strconv.ParseUint(postID, 10, 64)
+			if err != nil {
+				return "", fmt.Errorf("unable to get comicID from %s: %w", val, err)
+			}
+		}
+	}
+
+	cbzFilename := fmt.Sprintf("download/nortverse - %04d.cbz", comicID)
+
 	for _, s := range doc.Find("a.next-comic").EachIter() {
 		if val, ok := s.Attr("href"); ok {
 			nextUrl = val
 		}
 	}
 
-	if _, err := os.Stat(cbzFilename); !errors.Is(err, os.ErrNotExist) {
-		fmt.Printf("%s already exists\n", cbzFilename)
-		return nextUrl, nil
+	if !overwrite {
+		if _, err := os.Stat(cbzFilename); !errors.Is(err, os.ErrNotExist) {
+			slog.Info("zip already exists, skipping", "filename", cbzFilename)
+			return nextUrl, nil
+		}
 	}
 
 	ci := comicinfo.NewComicInfo()
 	ci.Series = "Nortverse"
-	ci.Web = url
+	ci.Web = comicURL
 	ci.LanguageISO = "en"
 	ci.Format = "Web"
 
 	for _, s := range doc.Find(".posted-on a").EachIter() {
 		d, err := time.Parse("January 2, 2006", s.Text())
 		if err != nil {
-			fmt.Println(err)
+			return "", fmt.Errorf("unable parse date %s: %w", s.Text(), err)
 		}
 		ci.Year = d.Year()
 		ci.Month = int(d.Month())
@@ -100,7 +132,7 @@ func downloadComic(ctx context.Context, count int, url string) (string, error) {
 		ci.Title = s.Text()
 		res := pattern.FindStringSubmatch(ci.Title)
 		if len(res) > 0 {
-			ci.StoryArc = res[0]
+			ci.StoryArc = res[1]
 		}
 	}
 
@@ -111,9 +143,9 @@ func downloadComic(ctx context.Context, count int, url string) (string, error) {
 		ci.Characters = ci.Characters + s.Text()
 	}
 
-	ci.Number = fmt.Sprint(count)
+	ci.Number = fmt.Sprint(comicID)
 
-	// Create a new zip archive.
+	slog.Info("creating zip", "filename", cbzFilename)
 	zipFile, err := os.Create(cbzFilename)
 	if err != nil {
 		return "", fmt.Errorf("unable create zip file: %w", err)
@@ -157,14 +189,7 @@ func downloadComic(ctx context.Context, count int, url string) (string, error) {
 
 func init() {
 	rootCmd.AddCommand(downloadCmd)
-
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// downloadCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// downloadCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	downloadCmd.PersistentFlags().String("start-url", "https://nortverse.com/comic/overconfidence/", "start downloading from this url")
+	downloadCmd.PersistentFlags().Bool("single", false, "only download the single issue")
+	downloadCmd.PersistentFlags().Bool("overwrite", false, "even download if already exists")
 }
