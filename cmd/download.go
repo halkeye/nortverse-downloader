@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"regexp"
 	"strconv"
 	"time"
@@ -38,9 +39,15 @@ var downloadCmd = &cobra.Command{
 		if err != nil {
 			panic(err)
 		}
+
+		outputDir, err := cmd.PersistentFlags().GetString("output")
+		if err != nil {
+			panic(err)
+		}
+
 		for nextUrl != "" {
 			url := nextUrl
-			nextUrl, err = downloadComic(cmd.Context(), overwrite, url)
+			nextUrl, err = downloadComic(cmd.Context(), outputDir, overwrite, url)
 			if err != nil {
 				panic(fmt.Errorf("unable to download url: %s - %w", url, err))
 			}
@@ -70,12 +77,16 @@ func downloadUrl(ctx context.Context, url string) (io.ReadCloser, error) {
 	return res.Body, nil
 }
 
-func downloadComic(ctx context.Context, overwrite bool, comicURL string) (string, error) {
+func downloadComic(ctx context.Context, outputDir string, overwrite bool, comicURL string) (string, error) {
 	var nextUrl string
 	var comicID uint64
 
 	body, err := downloadUrl(ctx, comicURL)
+	if err != nil {
+		return "", fmt.Errorf("unable to download url: %w", err)
+	}
 	defer body.Close()
+
 	// Load the HTML document
 	doc, err := goquery.NewDocumentFromReader(body)
 	if err != nil {
@@ -96,7 +107,7 @@ func downloadComic(ctx context.Context, overwrite bool, comicURL string) (string
 		}
 	}
 
-	cbzFilename := fmt.Sprintf("download/nortverse - %04d.cbz", comicID)
+	cbzFilename := path.Join(outputDir, fmt.Sprintf("nortverse - %04d.cbz", comicID))
 
 	for _, s := range doc.Find("a.next-comic").EachIter() {
 		if val, ok := s.Attr("href"); ok {
@@ -192,4 +203,5 @@ func init() {
 	downloadCmd.PersistentFlags().String("start-url", "https://nortverse.com/comic/overconfidence/", "start downloading from this url")
 	downloadCmd.PersistentFlags().Bool("single", false, "only download the single issue")
 	downloadCmd.PersistentFlags().Bool("overwrite", false, "even download if already exists")
+	downloadCmd.PersistentFlags().String("output", "download", "download directory")
 }
