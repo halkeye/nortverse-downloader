@@ -49,7 +49,7 @@ var downloadCmd = &cobra.Command{
 			url := nextUrl
 			nextUrl, err = downloadComic(cmd.Context(), outputDir, overwrite, url)
 			if err != nil {
-				panic(fmt.Errorf("unable to download url: %s - %w", url, err))
+				panic(fmt.Errorf("%s - %w", url, err))
 			}
 			if single {
 				break
@@ -68,7 +68,7 @@ func downloadUrl(ctx context.Context, url string) (io.ReadCloser, error) {
 	req.Header.Set("User-Agent", "nortverse-downloader/1.0.0")
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("unable to download url: %w", err)
+		return nil, err
 	}
 
 	if res.StatusCode != 200 {
@@ -105,6 +105,11 @@ func downloadComic(ctx context.Context, outputDir string, overwrite bool, comicU
 				return "", fmt.Errorf("unable to get comicID from %s: %w", val, err)
 			}
 		}
+	}
+
+	err = os.MkdirAll(outputDir, 0750)
+	if err != nil {
+		return "", fmt.Errorf("unable to create output dir: %w", err)
 	}
 
 	cbzFilename := path.Join(outputDir, fmt.Sprintf("nortverse - %04d.cbz", comicID))
