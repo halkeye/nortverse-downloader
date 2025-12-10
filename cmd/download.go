@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/corpix/uarand"
 	"github.com/fmartingr/go-comicinfo/v2"
 	"github.com/spf13/cobra"
 )
@@ -65,7 +66,7 @@ func downloadUrl(ctx context.Context, url string) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("unable to create request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "nortverse-downloader/1.0.0")
+	req.Header.Set("User-Agent", uarand.GetRandom())
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err

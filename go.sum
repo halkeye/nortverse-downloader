@@ -6,6 +6,8 @@ github.com/antchfx/htmlquery v1.3.4 h1:Isd0srPkni2iNTWCwVj/72t7uCphFeor5Q8nCzj1j
 github.com/antchfx/htmlquery v1.3.4/go.mod h1:K9os0BwIEmLAvTqaNSua8tXLWRWZpocZIH73OzWQbwM=
 github.com/antchfx/xpath v1.3.3 h1:tmuPQa1Uye0Ym1Zn65vxPgfltWb/Lxu2jeqIGteJSRs=
 github.com/antchfx/xpath v1.3.3/go.mod h1:i54GszH55fYfBmoZXapTHN8T8tkcHfRgLyVwwqzXNcs=
+github.com/corpix/uarand v0.2.0 h1:U98xXwud/AVuCpkpgfPF7J5TQgr7R5tqT8VZP5KWbzE=
+github.com/corpix/uarand v0.2.0/go.mod h1:/3Z1QIqWkDIhf6XWn/08/uMHoQ8JUoTIKc2iPchBOmM=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
 github.com/fmartingr/go-comicinfo/v2 v2.0.2 h1:VppvrHr8C4+iktBTOd7vzTMNbVecZ7F/Ji1kPTOIGg4=
 github.com/fmartingr/go-comicinfo/v2 v2.0.2/go.mod h1:LUu/VenzEJkJt2PN49Kfpe50IgZkVkvH0m9Fnld8Dh0=
