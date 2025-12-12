@@ -3,6 +3,7 @@ package cmd
 import (
 	"archive/zip"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -61,13 +62,20 @@ var downloadCmd = &cobra.Command{
 }
 
 func downloadUrl(ctx context.Context, url string) (io.ReadCloser, error) {
+	// https://old.reddit.com/r/redditdev/comments/uncu00/go_golang_clients_getting_403_blocked_responses/ says this will help with cloudflare
+	defaultClient := http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{},
+		},
+	}
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create request: %w", err)
 	}
 
+	req.Header.Set("Accept", "*/*")
 	req.Header.Set("User-Agent", uarand.GetRandom())
-	res, err := http.DefaultClient.Do(req)
+	res, err := defaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
