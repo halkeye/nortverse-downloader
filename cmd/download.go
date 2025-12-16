@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -47,6 +48,16 @@ var downloadCmd = &cobra.Command{
 			panic(err)
 		}
 
+		sleepMin, err := cmd.PersistentFlags().GetDuration("sleep-min")
+		if err != nil {
+			panic(err)
+		}
+
+		sleepMax, err := cmd.PersistentFlags().GetDuration("sleep-max")
+		if err != nil {
+			panic(err)
+		}
+
 		for nextUrl != "" {
 			url := nextUrl
 			nextUrl, err = downloadComic(cmd.Context(), outputDir, overwrite, url)
@@ -56,7 +67,9 @@ var downloadCmd = &cobra.Command{
 			if single {
 				break
 			}
-			time.Sleep(time.Second * 5)
+			sleepTime := time.Duration(rand.Intn(int(sleepMax)-int(sleepMin)) + int(sleepMin))
+			slog.Info("sleeping", "sleepTime", sleepTime)
+			time.Sleep(sleepTime)
 		}
 	},
 }
@@ -216,6 +229,8 @@ func init() {
 	rootCmd.AddCommand(downloadCmd)
 	downloadCmd.PersistentFlags().String("start-url", "https://nortverse.com/comic/overconfidence/", "start downloading from this url")
 	downloadCmd.PersistentFlags().Bool("single", false, "only download the single issue")
+	downloadCmd.PersistentFlags().Duration("sleep-min", 60*time.Second, "sleep between page downloads (min)")
+	downloadCmd.PersistentFlags().Duration("sleep-max", 70*time.Second, "sleep between page downloads (max)")
 	downloadCmd.PersistentFlags().Bool("overwrite", false, "even download if already exists")
 	downloadCmd.PersistentFlags().String("output", "download", "download directory")
 }
