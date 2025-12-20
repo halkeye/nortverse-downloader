@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Jleagle/flaresolverr-go"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/corpix/uarand"
 	"github.com/fmartingr/go-comicinfo/v2"
@@ -58,9 +59,36 @@ var downloadCmd = &cobra.Command{
 			panic(err)
 		}
 
+		downloader := &downloader{
+			client: &http.Client{
+				Transport: &http.Transport{
+					// https://old.reddit.com/r/redditdev/comments/uncu00/go_golang_clients_getting_403_blocked_responses/ says this will help with cloudflare
+					TLSClientConfig: &tls.Config{},
+				},
+			},
+			outputDir: outputDir,
+			overwrite: overwrite,
+		}
+
+		flaresolverrURL, err := cmd.PersistentFlags().GetString("flaresolverr")
+		if err != nil {
+			panic(err)
+		}
+		if flaresolverrURL != "" {
+			parsed, err := url.Parse(flaresolverrURL)
+			if err != nil {
+				panic(err)
+			}
+
+			downloader.client.Transport = flaresolverr.NewTransport(flaresolverr.NewClient(
+				flaresolverr.WithHostName(parsed.Hostname()),
+				flaresolverr.WithPortString(parsed.Port()),
+				flaresolverr.WithProtocol(parsed.Scheme),
+			))
+		}
 		for nextUrl != "" {
 			url := nextUrl
-			nextUrl, err = downloadComic(cmd.Context(), outputDir, overwrite, url)
+			nextUrl, err = downloader.comic(cmd.Context(), url)
 			if err != nil {
 				panic(fmt.Errorf("%s - %w", url, err))
 			}
@@ -74,13 +102,13 @@ var downloadCmd = &cobra.Command{
 	},
 }
 
-func downloadUrl(ctx context.Context, url string) (io.ReadCloser, error) {
-	// https://old.reddit.com/r/redditdev/comments/uncu00/go_golang_clients_getting_403_blocked_responses/ says this will help with cloudflare
-	defaultClient := http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{},
-		},
-	}
+type downloader struct {
+	client    *http.Client
+	outputDir string
+	overwrite bool
+}
+
+func (d *downloader) url(ctx context.Context, url string) (io.ReadCloser, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create request: %w", err)
@@ -88,7 +116,7 @@ func downloadUrl(ctx context.Context, url string) (io.ReadCloser, error) {
 
 	req.Header.Set("Accept", "*/*")
 	req.Header.Set("User-Agent", uarand.GetRandom())
-	res, err := defaultClient.Do(req)
+	res, err := d.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -99,11 +127,11 @@ func downloadUrl(ctx context.Context, url string) (io.ReadCloser, error) {
 	return res.Body, nil
 }
 
-func downloadComic(ctx context.Context, outputDir string, overwrite bool, comicURL string) (string, error) {
+func (d *downloader) comic(ctx context.Context, comicURL string) (string, error) {
 	var nextUrl string
 	var comicID uint64
 
-	body, err := downloadUrl(ctx, comicURL)
+	body, err := d.url(ctx, comicURL)
 	if err != nil {
 		return "", fmt.Errorf("unable to download url: %w", err)
 	}
@@ -129,12 +157,12 @@ func downloadComic(ctx context.Context, outputDir string, overwrite bool, comicU
 		}
 	}
 
-	err = os.MkdirAll(outputDir, 0750)
+	err = os.MkdirAll(d.outputDir, 0750)
 	if err != nil {
 		return "", fmt.Errorf("unable to create output dir: %w", err)
 	}
 
-	cbzFilename := path.Join(outputDir, fmt.Sprintf("nortverse - %04d.cbz", comicID))
+	cbzFilename := path.Join(d.outputDir, fmt.Sprintf("nortverse - %04d.cbz", comicID))
 
 	for _, s := range doc.Find("a.next-comic").EachIter() {
 		if val, ok := s.Attr("href"); ok {
@@ -142,7 +170,7 @@ func downloadComic(ctx context.Context, outputDir string, overwrite bool, comicU
 		}
 	}
 
-	if !overwrite {
+	if !d.overwrite {
 		if _, err := os.Stat(cbzFilename); !errors.Is(err, os.ErrNotExist) {
 			slog.Info("zip already exists, skipping", "filename", cbzFilename)
 			return nextUrl, nil
@@ -199,7 +227,7 @@ func downloadComic(ctx context.Context, outputDir string, overwrite bool, comicU
 			return "", fmt.Errorf("unable add file to zip: %w", err)
 		}
 
-		body, err := downloadUrl(ctx, s.AttrOr("src", ""))
+		body, err := d.url(ctx, s.AttrOr("src", ""))
 		if err != nil {
 			return "", fmt.Errorf("downloading image: %w", err)
 		}
@@ -233,4 +261,5 @@ func init() {
 	downloadCmd.PersistentFlags().Duration("sleep-max", 70*time.Second, "sleep between page downloads (max)")
 	downloadCmd.PersistentFlags().Bool("overwrite", false, "even download if already exists")
 	downloadCmd.PersistentFlags().String("output", "download", "download directory")
+	downloadCmd.PersistentFlags().String("flaresolverr", "", "flaresolverr url")
 }
